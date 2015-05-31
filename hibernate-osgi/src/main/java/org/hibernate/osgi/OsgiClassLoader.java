@@ -16,8 +16,11 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.hibernate.Session;
+import org.hibernate.jpa.HibernatePersistenceProvider;
 import org.hibernate.service.spi.Stoppable;
 import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
 
 /**
  * Custom OSGI ClassLoader helper which knows all the "interesting"
@@ -29,17 +32,20 @@ import org.osgi.framework.Bundle;
 public class OsgiClassLoader extends ClassLoader implements Stoppable {
 	// Leave these as Sets -- addClassLoader or addBundle may be called more
 	// than once if a SF or EMF is closed and re-created.
-	private Set<ClassLoader> classLoaders = new LinkedHashSet<ClassLoader>();
+
 	private Set<Bundle> bundles = new LinkedHashSet<Bundle>();
 
 	private Map<String, Class<?>> classCache = new HashMap<String, Class<?>>();
 	private Map<String, URL> resourceCache = new HashMap<String, URL>();
 	
-	public OsgiClassLoader() {
+	public OsgiClassLoader(Bundle requestingBundle) {
 		// DO NOT use ClassLoader#parent, which is typically the SystemClassLoader for most containers.  Instead,
 		// allow the ClassNotFoundException to be thrown.  ClassLoaderServiceImpl will check the SystemClassLoader
 		// later on.  This is especially important for embedded OSGi containers, etc.
 		super( null );
+		addBundle(requestingBundle);
+		addBundle(FrameworkUtil.getBundle(Session.class));
+		addBundle(FrameworkUtil.getBundle(HibernatePersistenceProvider.class));
 	}
 
 	/**
@@ -67,18 +73,6 @@ public class OsgiClassLoader extends ClassLoader implements Stoppable {
 			}
 		}
 		
-		for ( ClassLoader classLoader : classLoaders ) {
-			try {
-				final Class clazz = classLoader.loadClass( name );
-				if ( clazz != null ) {
-					classCache.put( name, clazz );
-					return clazz;
-				}
-			}
-			catch ( Exception ignore ) {
-			}
-		}
-
 		throw new ClassNotFoundException( "Could not load requested class : " + name );
 	}
 
@@ -105,19 +99,7 @@ public class OsgiClassLoader extends ClassLoader implements Stoppable {
 			catch ( Exception ignore ) {
 			}
 		}
-		
-		for ( ClassLoader classLoader : classLoaders ) {
-			try {
-				final URL resource = classLoader.getResource( name );
-				if ( resource != null ) {
-					resourceCache.put( name, resource );
-					return resource;
-				}
-			}
-			catch ( Exception ignore ) {
-			}
-		}
-		
+
 		// TODO: Error?
 		return null;
 	}
@@ -138,17 +120,6 @@ public class OsgiClassLoader extends ClassLoader implements Stoppable {
 		for ( Bundle bundle : bundles ) {
 			try {
 				final Enumeration<URL> resources = bundle.getResources( name );
-				if ( resources != null ) {
-					enumerations.add( resources );
-				}
-			}
-			catch ( Exception ignore ) {
-			}
-		}
-		
-		for ( ClassLoader classLoader : classLoaders ) {
-			try {
-				final Enumeration<URL> resources = classLoader.getResources( name );
 				if ( resources != null ) {
 					enumerations.add( resources );
 				}
@@ -183,15 +154,6 @@ public class OsgiClassLoader extends ClassLoader implements Stoppable {
 	}
 
 	/**
-	 * Adds a ClassLoader to the wrapped set of ClassLoaders
-	 *
-	 * @param classLoader The ClassLoader to add
-	 */
-	public void addClassLoader( ClassLoader classLoader ) {
-		classLoaders.add( classLoader );
-	}
-
-	/**
 	 * Adds a Bundle to the wrapped set of Bundles
 	 *
 	 * @param bundle The Bundle to add
@@ -202,7 +164,6 @@ public class OsgiClassLoader extends ClassLoader implements Stoppable {
 
 	@Override
 	public void stop() {
-		classLoaders.clear();
 		bundles.clear();
 		classCache.clear();
 		resourceCache.clear();

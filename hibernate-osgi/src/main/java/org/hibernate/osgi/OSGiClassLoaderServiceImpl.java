@@ -20,11 +20,9 @@ import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 public class OSGiClassLoaderServiceImpl extends ClassLoaderServiceImpl implements ClassLoaderService {
 
 	private final OsgiServiceUtil osgiServiceUtil;
-	private final OsgiClassLoader osgiClassLoader;
 
 	public OSGiClassLoaderServiceImpl(OsgiClassLoader osgiClassLoader, OsgiServiceUtil osgiServiceUtil) {
 		super( osgiClassLoader );
-		this.osgiClassLoader = osgiClassLoader;
 		this.osgiServiceUtil = osgiServiceUtil;
 	}
 
@@ -45,7 +43,6 @@ public class OSGiClassLoaderServiceImpl extends ClassLoaderServiceImpl implement
 	@Override
 	public void stop() {
 		super.stop();
-		osgiClassLoader.stop();
 		osgiServiceUtil.stop();
 	}
 

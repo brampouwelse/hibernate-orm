@@ -6,10 +6,7 @@
  */
 package org.hibernate.osgi;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.spi.PersistenceUnitInfo;
 
@@ -35,7 +32,6 @@ import org.osgi.framework.BundleReference;
  * @author Tim Ward
  */
 public class OsgiPersistenceProvider extends HibernatePersistenceProvider {
-	private OsgiClassLoader osgiClassLoader;
 	private OsgiJtaPlatform osgiJtaPlatform;
 	private OsgiServiceUtil osgiServiceUtil;
 	private Bundle requestingBundle;
@@ -43,17 +39,14 @@ public class OsgiPersistenceProvider extends HibernatePersistenceProvider {
 	/**
 	 * Constructs a OsgiPersistenceProvider
 	 *
-	 * @param osgiClassLoader The ClassLoader we built from OSGi Bundles
 	 * @param osgiJtaPlatform The OSGi-specific JtaPlatform impl we built
+	 * @param osgiServiceUtil
 	 * @param requestingBundle The OSGi Bundle requesting the PersistenceProvider
-	 * @param context The OSGi context
 	 */
 	public OsgiPersistenceProvider(
-			OsgiClassLoader osgiClassLoader,
 			OsgiJtaPlatform osgiJtaPlatform,
 			OsgiServiceUtil osgiServiceUtil,
 			Bundle requestingBundle) {
-		this.osgiClassLoader = osgiClassLoader;
 		this.osgiJtaPlatform = osgiJtaPlatform;
 		this.osgiServiceUtil = osgiServiceUtil;
 		this.requestingBundle = requestingBundle;
@@ -69,14 +62,22 @@ public class OsgiPersistenceProvider extends HibernatePersistenceProvider {
 
 		// TODO: This needs tested.
 		settings.put( org.hibernate.cfg.AvailableSettings.SCANNER, new OsgiScanner( requestingBundle ) );
-		// TODO: This is temporary -- for PersistenceXmlParser's use of
-		// ClassLoaderServiceImpl#fromConfigSettings
-		settings.put( AvailableSettings.ENVIRONMENT_CLASSLOADER, osgiClassLoader );
 
-		osgiClassLoader.addBundle( requestingBundle );
 
-		final EntityManagerFactoryBuilder builder = getEntityManagerFactoryBuilderOrNull( persistenceUnitName, settings, osgiClassLoader );
-		return builder == null ? null : builder.build();
+		OsgiClassLoader osgiClassLoader = new OsgiClassLoader(requestingBundle);
+		// TODO: This doesn't work even when providing the ClassLoader bootstrap is failing
+//		settings.put(AvailableSettings.CLASSLOADERS, Collections.singleton(osgiClassLoader));
+
+		ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+		try {
+
+			Thread.currentThread().setContextClassLoader(osgiClassLoader);
+			final EntityManagerFactoryBuilder builder = getEntityManagerFactoryBuilderOrNull( persistenceUnitName, settings, osgiClassLoader);
+			return builder == null ? null : builder.build();
+		}
+		finally {
+			Thread.currentThread().setContextClassLoader(contextClassLoader);
+		}
 	}
 
 	@Override
@@ -90,9 +91,15 @@ public class OsgiPersistenceProvider extends HibernatePersistenceProvider {
 				new OsgiScanner( ( (BundleReference) info.getClassLoader() ).getBundle() )
 		);
 
-		osgiClassLoader.addClassLoader( info.getClassLoader() );
-
-		return Bootstrap.getEntityManagerFactoryBuilder( info, settings, osgiClassLoader ).build();
+		ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+		try{
+			OsgiClassLoader osgiClassLoader = new OsgiClassLoader(requestingBundle);
+			Thread.currentThread().setContextClassLoader(osgiClassLoader);
+			return Bootstrap.getEntityManagerFactoryBuilder(info, settings, osgiClassLoader).build();
+		}
+		finally {
+			Thread.currentThread().setContextClassLoader(contextClassLoader);
+		}
 	}
 
 	@SuppressWarnings("unchecked")
